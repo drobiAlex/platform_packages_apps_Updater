@@ -31,4 +31,5 @@ LOCAL_SRC_FILES := $(call all-java-files-under, src)
 LOCAL_REQUIRED_MODULES := default-permissions_co.copperhead.updater.xml permissions_co.copperhead.updater.xml whitelist_co.copperhead.updater.xml
 LOCAL_PRIVILEGED_MODULE := true
 LOCAL_STATIC_JAVA_LIBRARIES := android-support-v4
+LOCAL_PRIVATE_PLATFORM_APIS := true
 include $(BUILD_PACKAGE)
