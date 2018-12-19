@@ -11,7 +11,7 @@ import android.preference.PreferenceActivity;
 import android.preference.PreferenceManager;
 
 public class Settings extends PreferenceActivity {
-    private static final int DEFAULT_NETWORK_TYPE = JobInfo.NETWORK_TYPE_ANY;
+    private static final int DEFAULT_NETWORK_TYPE = JobInfo.NETWORK_TYPE_UNMETERED;
     private static final String KEY_NETWORK_TYPE = "network_type";
     static final String KEY_BATTERY_NOT_LOW = "battery_not_low";
     static final String KEY_IDLE_REBOOT = "idle_reboot";
