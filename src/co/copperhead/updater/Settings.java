@@ -2,6 +2,7 @@ package co.copperhead.updater;
 
 import android.app.job.JobInfo;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.UserManager;
@@ -16,6 +17,9 @@ public class Settings extends PreferenceActivity {
     static final String KEY_BATTERY_NOT_LOW = "battery_not_low";
     static final String KEY_IDLE_REBOOT = "idle_reboot";
     static final String KEY_WAITING_FOR_REBOOT = "waiting_for_reboot";
+    private static final String KEY_CHECK_FOR_UPDATES = "check_for_updates";
+
+    static final String PREFERENCE_CHANNEL = "channel";
 
     static SharedPreferences getPreferences(final Context context) {
         final Context deviceContext = context.createDeviceProtectedStorageContext();
@@ -38,6 +42,12 @@ public class Settings extends PreferenceActivity {
         }
         getPreferenceManager().setStorageDeviceProtected();
         addPreferencesFromResource(R.xml.settings);
+
+        final Preference checkForUpdates = findPreference(KEY_CHECK_FOR_UPDATES);
+        checkForUpdates.setOnPreferenceClickListener((final Preference preference) -> {
+            sendBroadcast(new Intent(this, TriggerUpdateReceiver.class));
+            return true;
+        });
 
         final Preference networkType = findPreference(KEY_NETWORK_TYPE);
         networkType.setOnPreferenceChangeListener((final Preference preference, final Object newValue) -> {

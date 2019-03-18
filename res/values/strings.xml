@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="app_name">CopperheadOS Updater</string>
     <string name="notification_channel">Updates</string>
     <string name="notification_title">Update successfully installed</string>
@@ -21,4 +21,37 @@
     <string name="battery_not_low_summary">Only download / install updates when the battery is above the warning level</string>
     <string name="idle_reboot_title">Automatic reboot</string>
     <string name="idle_reboot_summary">Automatically reboot once the device is idle after successfully installing an update</string>
+    <string name="check_for_updates_title">Check for updates</string>
+    <string name="license_notification_channel">License check.</string>
+    <string name="license_check_failed_notif_title">>License verification failed.</string>
+    <string name="license_check_failed_notif_msg">Please update your license information and try checking for updates again.</string>
+
+    <string name="text_download_speed">%1$s, %2$s/s</string>
+    <string name="ongoing_channel_title">Ongoing downloads</string>
+    <string name="downloading_notification">Downloading</string>
+    <string name="download_completed_notification">Download completed</string>
+    <string name="verifying_download_notification">Verifying update</string>
+    <string name="verification_failed_notification">Verification failed</string>
+    <string name="prepare_zip_message">Preliminary update preparation</string>
+    <string name="finalizing_package">Finalizing package installation</string>
+    <string name="preparing_ota_first_boot">Preparing for first boot</string>
+    <string name="installing_update_finished">Update installed</string>
+
+    <string name="reboot">Reboot</string>
+
+    <plurals name="eta_seconds">
+        <item quantity="one">1 second left</item>
+        <item quantity="other">
+            <xliff:g id="count">%d</xliff:g> seconds left</item>
+    </plurals>
+    <plurals name="eta_minutes">
+        <item quantity="one">1 minute left</item>
+        <item quantity="other">
+            <xliff:g id="count">%d</xliff:g> minutes left</item>
+    </plurals>
+    <plurals name="eta_hours">
+        <item quantity="one">1 hour left</item>
+        <item quantity="other">
+            <xliff:g id="count">%d</xliff:g> hours left</item>
+    </plurals>
 </resources>

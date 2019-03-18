@@ -22,6 +22,7 @@ import android.os.UpdateEngine.ErrorCodeConstants;
 import android.os.UpdateEngineCallback;
 import android.preference.PreferenceManager;
 import android.util.Log;
+import co.copperhead.updater.download.DownloadClient;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -72,42 +73,6 @@ public class Service extends IntentService {
         return urlConnection;
     }
 
-    private void applyUpdate(final long payloadOffset, final String[] headerKeyValuePairs) {
-        final CountDownLatch monitor = new CountDownLatch(1);
-        final UpdateEngine engine = new UpdateEngine();
-        engine.bind(new UpdateEngineCallback() {
-            @Override
-            public void onStatusUpdate(int status, float percent) {
-                Log.d(TAG, "onStatusUpdate: " + status + ", " + percent * 100 + "%");
-            }
-
-            @Override
-            public void onPayloadApplicationComplete(int errorCode) {
-                if (errorCode == ErrorCodeConstants.SUCCESS) {
-                    Log.d(TAG, "onPayloadApplicationComplete success");
-                    annoyUser();
-                } else {
-                    Log.d(TAG, "onPayloadApplicationComplete: " + errorCode);
-                    mUpdating = false;
-                }
-                UPDATE_PATH.delete();
-                monitor.countDown();
-            }
-        });
-        if (SystemProperties.getBoolean("sys.update.streaming_test", false)) {
-            Log.d(TAG, "streaming update test");
-            final SharedPreferences preferences = Settings.getPreferences(this);
-            final String downloadFile = preferences.getString(PREFERENCE_DOWNLOAD_FILE, null);
-            engine.applyPayload(getString(R.string.url) + downloadFile, payloadOffset, 0, headerKeyValuePairs);
-        } else {
-            UPDATE_PATH.setReadable(true, false);
-            engine.applyPayload("file://" + UPDATE_PATH, payloadOffset, 0, headerKeyValuePairs);
-        }
-        try {
-            monitor.await();
-        } catch (InterruptedException e) {}
-    }
-
     private static ZipEntry getEntry(final ZipFile zipFile, final String name) throws GeneralSecurityException {
         final ZipEntry entry = zipFile.getEntry(name);
         if (entry == null) {
@@ -116,10 +81,11 @@ public class Service extends IntentService {
         return entry;
     }
 
-    private void onDownloadFinished(final long targetBuildDate, final String channel) throws IOException, GeneralSecurityException {
+    private void onDownloadFinished(final long targetBuildDate, final String channel)
+            throws IOException, GeneralSecurityException {
         try {
-            RecoverySystem.verifyPackage(UPDATE_PATH,
-                (int progress) -> Log.d(TAG, "verifyPackage: " + progress + "%"), null);
+            RecoverySystem.verifyPackage(UPDATE_PATH, (int progress) -> Log.d(TAG, "verifyPackage: " + progress + "%"),
+                    null);
 
             final ZipFile zipFile = new ZipFile(UPDATE_PATH);
 
@@ -132,7 +98,7 @@ public class Service extends IntentService {
             String sourceFingerprint = null;
             String streamingPropertyFiles[] = null;
             long timestamp = 0;
-            for (String line; (line = reader.readLine()) != null; ) {
+            for (String line; (line = reader.readLine()) != null;) {
                 final String[] pair = line.split("=");
                 if ("post-timestamp".equals(pair[0])) {
                     timestamp = Long.parseLong(pair[1]);
@@ -197,8 +163,9 @@ public class Service extends IntentService {
             }
 
             final ZipEntry payloadProperties = getEntry(zipFile, "payload_properties.txt");
-            final BufferedReader propertiesReader = new BufferedReader(new InputStreamReader(zipFile.getInputStream(payloadProperties)));
-            applyUpdate(payloadOffset, propertiesReader.lines().toArray(String[]::new));
+            final BufferedReader propertiesReader = new BufferedReader(
+                    new InputStreamReader(zipFile.getInputStream(payloadProperties)));
+            //applyUpdate(payloadOffset, propertiesReader.lines().toArray(String[]::new));
         } catch (GeneralSecurityException e) {
             UPDATE_PATH.delete();
             throw e;
@@ -215,25 +182,34 @@ public class Service extends IntentService {
 
         final String title = getString(isAbUpdate() ? R.string.notification_title : R.string.notification_title_legacy);
         final String text = getString(isAbUpdate() ? R.string.notification_text : R.string.notification_text_legacy);
-        final String rebootText = getString(isAbUpdate() ? R.string.notification_reboot_action : R.string.notification_reboot_action_legacy);
+        final String rebootText = getString(
+                isAbUpdate() ? R.string.notification_reboot_action : R.string.notification_reboot_action_legacy);
 
-        final PendingIntent reboot = PendingIntent.getBroadcast(this, PENDING_REBOOT_ID, new Intent(this, RebootReceiver.class), 0);
-        final PendingIntent settings = PendingIntent.getActivity(this, PENDING_SETTINGS_ID, new Intent(this, Settings.class), 0);
+        final PendingIntent reboot = PendingIntent.getBroadcast(this, PENDING_REBOOT_ID,
+                new Intent(this, RebootReceiver.class), 0);
+        final PendingIntent settings = PendingIntent.getActivity(this, PENDING_SETTINGS_ID,
+                new Intent(this, Settings.class), 0);
         final NotificationManager notificationManager = getSystemService(NotificationManager.class);
         final NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID,
-            getString(R.string.notification_channel), NotificationManager.IMPORTANCE_HIGH);
+                getString(R.string.notification_channel), NotificationManager.IMPORTANCE_HIGH);
         channel.enableLights(true);
         channel.enableVibration(true);
         notificationManager.deleteNotificationChannel(NOTIFICATION_CHANNEL_ID_OLD);
         notificationManager.createNotificationChannel(channel);
         notificationManager.notify(NOTIFICATION_ID, new Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .addAction(R.drawable.ic_restart, rebootText, reboot)
-            .setContentIntent(settings)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setOngoing(true)
-            .setSmallIcon(R.drawable.ic_system_update_white_24dp)
-            .build());
+                .addAction(R.drawable.ic_restart, rebootText, reboot).setContentIntent(settings).setContentTitle(title)
+                .setContentText(text).setOngoing(true).setSmallIcon(R.drawable.ic_system_update_white_24dp).build());
+    }
+
+    private boolean otaExists(final String path) {
+        try {
+            HttpURLConnection con = (HttpURLConnection) fetchData(path);
+            con.setRequestMethod("HEAD");
+            return (con.getResponseCode() == HttpURLConnection.HTTP_OK);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 
     @Override
@@ -257,7 +233,7 @@ public class Service extends IntentService {
             mUpdating = true;
 
             final String channel = SystemProperties.get("sys.update.channel",
-                preferences.getString(PREFERENCE_CHANNEL, "stable"));
+                    preferences.getString(PREFERENCE_CHANNEL, "stable"));
 
             Log.d(TAG, "fetching metadata for " + DEVICE + "-" + channel);
             InputStream input = fetchData(DEVICE + "-" + channel).getInputStream();
@@ -265,20 +241,38 @@ public class Service extends IntentService {
             final String[] metadata = reader.readLine().split(" ");
             reader.close();
 
+            Log.d("TEST", "metadata - " + metadata);
+
             final String targetIncremental = metadata[0];
             final long targetBuildDate = Long.parseLong(metadata[1]);
+            Log.d("TEST", "targetIncremental - " + targetIncremental + " " + "date - " + targetBuildDate);
             final long sourceBuildDate = SystemProperties.getLong("ro.build.date.utc", 0);
             if (targetBuildDate <= sourceBuildDate) {
-                Log.d(TAG, "targetBuildDate: " + targetBuildDate + " not higher than sourceBuildDate: " + sourceBuildDate);
+                Log.d(TAG,
+                        "targetBuildDate: " + targetBuildDate + " not higher than sourceBuildDate: " + sourceBuildDate);
                 mUpdating = false;
-                return;
+                //return;
             }
+
+            preferences.edit().putLong("target_build_date", targetBuildDate).apply();
 
             String downloadFile = preferences.getString(PREFERENCE_DOWNLOAD_FILE, null);
             long downloaded = UPDATE_PATH.length();
 
             final String incrementalUpdate = DEVICE + "-incremental-" + INCREMENTAL + "-" + targetIncremental + ".zip";
             final String fullUpdate = DEVICE + "-ota_update-" + targetIncremental + ".zip";
+
+            Log.d("TEST", "incr found - " + otaExists(incrementalUpdate));
+            String updatePath = fullUpdate;
+            if (otaExists(incrementalUpdate)) {
+                updatePath = fullUpdate;
+            }
+
+            PeriodicJob.scheduleDownload(this, updatePath);
+
+            if (true) {
+                return;
+            }
 
             if (incrementalUpdate.equals(downloadFile) || fullUpdate.equals(downloadFile)) {
                 Log.d(TAG, "resume fetch of " + downloadFile + " from " + downloaded + " bytes");
