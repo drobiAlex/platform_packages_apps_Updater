@@ -28,6 +28,8 @@
 
     <string name="text_download_speed">%1$s, %2$s/s</string>
     <string name="ongoing_channel_title">Ongoing downloads</string>
+    <string name="download_paused_notification">Download paused</string>
+    <string name="download_paused_error_notification">Download error</string>
     <string name="downloading_notification">Downloading</string>
     <string name="download_completed_notification">Download completed</string>
     <string name="verifying_download_notification">Verifying update</string>
@@ -38,6 +40,8 @@
     <string name="installing_update_finished">Update installed</string>
 
     <string name="reboot">Reboot</string>
+    <string name="pause_button">Pause</string>
+    <string name="resume_button">Resume</string>
 
     <plurals name="eta_seconds">
         <item quantity="one">1 second left</item>

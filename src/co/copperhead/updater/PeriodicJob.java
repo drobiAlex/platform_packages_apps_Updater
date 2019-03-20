@@ -10,7 +10,6 @@ import static co.copperhead.updater.UpdateInstaller.IS_AB_UPDATE;
 import java.io.File;
 import java.text.NumberFormat;
 
-import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -30,6 +29,7 @@ import android.os.PersistableBundle;
 import android.os.RecoverySystem;
 import android.os.SystemClock;
 import android.os.SystemProperties;
+import android.support.v4.app.NotificationCompat;
 import android.text.format.Formatter;
 import android.util.Log;
 
@@ -61,9 +61,15 @@ public class PeriodicJob extends JobService {
 
     static final File UPDATE_PATH = new File("/data/ota_package/update.zip");
 
+    private static final String PAUSE_INTENT_ACTION = "co.copperhead.updater.action.PAUSE_DOWNLOAD";
+    private static final String RESUME_INTENT_ACTION = "co.copperhead.updater.action.RESUME_DOWNLOAD";
+
     private NotificationManager mNotificationManager = null;
-    private Notification.Builder mNotificationBuilder = null;
-    private Notification.BigTextStyle mNotificationStyle = null;
+    private NotificationCompat.Builder mNotificationBuilder = null;
+    private NotificationCompat.BigTextStyle mNotificationStyle = null;
+
+    private DownloadClient mDownloadClient;
+    private String mUpdatePath;
 
     static void scheduleDownload(final Context context, String updatePath) {
         final int networkType = Settings.getNetworkType(context);
@@ -151,8 +157,11 @@ public class PeriodicJob extends JobService {
         if (params.getJobId() == JOB_ID_DOWNLOAD_UPDATE) {
             IntentFilter filter = new IntentFilter("co.copperhead.action.INSTALL_UPDATE");
             filter.addAction("co.copperhead.action.INSTALL_UPDATE_LEGACY");
+            filter.addAction(PAUSE_INTENT_ACTION);
+            filter.addAction(RESUME_INTENT_ACTION);
             registerReceiver(mReceiver, filter);
-            downloadUpdate(params.getExtras());
+            mUpdatePath = params.getExtras().getString("update_path");
+            downloadUpdate();
         } else {
             sendBroadcast(new Intent(this, TriggerUpdateReceiver.class));
         }
@@ -270,6 +279,20 @@ public class PeriodicJob extends JobService {
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
+            } else if (PAUSE_INTENT_ACTION.equals(intent.getAction())) {
+                mDownloadClient.cancel();
+                mNotificationBuilder.mActions.clear();
+                String text = getString(R.string.download_paused_notification);
+                mNotificationStyle.bigText(text);
+                mNotificationBuilder.addAction(android.R.drawable.ic_media_play,
+                        getString(R.string.resume_button),
+                        getResumePendingIntent());
+                mNotificationBuilder.setTicker(text);
+                mNotificationBuilder.setOngoing(false);
+                mNotificationBuilder.setAutoCancel(false);
+                mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
+            } else if (RESUME_INTENT_ACTION.equals(intent.getAction())) {
+                downloadUpdate();
             }
         }
     };
@@ -324,7 +347,18 @@ public class PeriodicJob extends JobService {
     
         @Override
         public void onFailure(boolean cancelled) {
-            
+            if (!cancelled) {
+                mNotificationBuilder.mActions.clear();
+                String text = getString(R.string.download_paused_error_notification);
+                mNotificationStyle.bigText(text);
+                mNotificationBuilder.addAction(android.R.drawable.ic_media_play,
+                        getString(R.string.resume_button),
+                        getResumePendingIntent());
+                mNotificationBuilder.setTicker(text);
+                mNotificationBuilder.setOngoing(false);
+                mNotificationBuilder.setAutoCancel(false);
+                mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
+            }
         }
     };
 
@@ -356,10 +390,9 @@ public class PeriodicJob extends JobService {
         }
     };
 
-    private void downloadUpdate(PersistableBundle extras) {
-        DownloadClient downloadClient;
+    private void downloadUpdate() {
         try {
-            downloadClient = new DownloadClient.Builder().setUrl(getUrl(extras.getString("update_path")))
+            mDownloadClient = new DownloadClient.Builder().setUrl(getUrl(mUpdatePath))
                     .setDestination(UPDATE_PATH).setDownloadCallback(mDownloadCallback)
                     .setProgressListener(mProgressListener).setUseDuplicateLinks(true).build();
         } catch (IOException e) {
@@ -367,25 +400,36 @@ public class PeriodicJob extends JobService {
             return;
         }
         showProgressNotification();
-        downloadClient.start();
+        mDownloadClient.start();
     }
 
     private void showProgressNotification() {
         NotificationChannel channel = new NotificationChannel(ONGOING_NOTIFICATION_CHANNEL,
-                getString(R.string.ongoing_channel_title),
-                NotificationManager.IMPORTANCE_LOW);
+                getString(R.string.ongoing_channel_title), NotificationManager.IMPORTANCE_LOW);
 
         String text = getString(R.string.downloading_notification);
         mNotificationManager.createNotificationChannel(channel);
-        mNotificationBuilder = new Notification.Builder(this, ONGOING_NOTIFICATION_CHANNEL);
+        mNotificationBuilder = new NotificationCompat.Builder(this, ONGOING_NOTIFICATION_CHANNEL);
         mNotificationBuilder.setSmallIcon(R.drawable.ic_system_update_white_24dp);
         mNotificationBuilder.setShowWhen(false);
-        mNotificationStyle = new Notification.BigTextStyle();
+        mNotificationBuilder.addAction(android.R.drawable.ic_media_pause,
+                getString(R.string.pause_button),
+                getPausePendingIntent());
+        mNotificationStyle = new NotificationCompat.BigTextStyle();
         mNotificationStyle.bigText(text);
         mNotificationBuilder.setStyle(mNotificationStyle);
         mNotificationBuilder.setTicker(text);
         mNotificationBuilder.setOngoing(true);
         mNotificationBuilder.setAutoCancel(false);
+
         mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
+    }
+    
+    private PendingIntent getPausePendingIntent() {
+        return PendingIntent.getBroadcast(this, 0, new Intent(PAUSE_INTENT_ACTION), 0);
+    }
+
+    private PendingIntent getResumePendingIntent() {
+        return PendingIntent.getBroadcast(this, 0, new Intent(RESUME_INTENT_ACTION), 0);
     }
 }
