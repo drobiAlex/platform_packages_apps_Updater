@@ -15,14 +15,10 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
-import android.os.RecoverySystem;
 import android.os.SystemProperties;
-import android.os.UpdateEngine;
-import android.os.UpdateEngine.ErrorCodeConstants;
-import android.os.UpdateEngineCallback;
 import android.preference.PreferenceManager;
+import android.support.v4.app.NotificationCompat;
 import android.util.Log;
-import co.copperhead.updater.download.DownloadClient;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -34,11 +30,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
-import java.nio.file.Files;
-import java.security.GeneralSecurityException;
-import java.util.concurrent.CountDownLatch;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 public class Service extends IntentService {
     private static final String TAG = "Service";
@@ -71,134 +62,6 @@ public class Service extends IntentService {
         urlConnection.setConnectTimeout(CONNECT_TIMEOUT);
         urlConnection.setReadTimeout(READ_TIMEOUT);
         return urlConnection;
-    }
-
-    private static ZipEntry getEntry(final ZipFile zipFile, final String name) throws GeneralSecurityException {
-        final ZipEntry entry = zipFile.getEntry(name);
-        if (entry == null) {
-            throw new GeneralSecurityException("missing zip entry: " + name);
-        }
-        return entry;
-    }
-
-    private void onDownloadFinished(final long targetBuildDate, final String channel)
-            throws IOException, GeneralSecurityException {
-        try {
-            RecoverySystem.verifyPackage(UPDATE_PATH, (int progress) -> Log.d(TAG, "verifyPackage: " + progress + "%"),
-                    null);
-
-            final ZipFile zipFile = new ZipFile(UPDATE_PATH);
-
-            final ZipEntry metadata = getEntry(zipFile, "META-INF/com/android/metadata");
-            final BufferedReader reader = new BufferedReader(new InputStreamReader(zipFile.getInputStream(metadata)));
-            String device = null;
-            String serialno = null;
-            String type = null;
-            String sourceIncremental = null;
-            String sourceFingerprint = null;
-            String streamingPropertyFiles[] = null;
-            long timestamp = 0;
-            for (String line; (line = reader.readLine()) != null;) {
-                final String[] pair = line.split("=");
-                if ("post-timestamp".equals(pair[0])) {
-                    timestamp = Long.parseLong(pair[1]);
-                } else if ("serialno".equals(pair[0])) {
-                    serialno = pair[1];
-                } else if ("pre-device".equals(pair[0])) {
-                    device = pair[1];
-                } else if ("ota-type".equals(pair[0])) {
-                    type = pair[1];
-                } else if ("ota-streaming-property-files".equals(pair[0])) {
-                    streamingPropertyFiles = pair[1].trim().split(",");
-                } else if ("pre-build-incremental".equals(pair[0])) {
-                    sourceIncremental = pair[1];
-                } else if ("pre-build".equals(pair[0])) {
-                    sourceFingerprint = pair[1];
-                }
-            }
-            if (timestamp != targetBuildDate) {
-                throw new GeneralSecurityException("timestamp does not match server metadata");
-            }
-            if (!DEVICE.equals(device)) {
-                throw new GeneralSecurityException("device mismatch");
-            }
-            if (serialno != null) {
-                if ("stable".equals(channel) || "beta".equals(channel) || "stable-old".equals(channel)) {
-                    throw new GeneralSecurityException("serialno constraint not permitted for channel " + channel);
-                }
-                if (!serialno.equals(Build.getSerial())) {
-                    throw new GeneralSecurityException("serialno mismatch");
-                }
-            }
-            if ("AB".equals(type) != isAbUpdate()) {
-                throw new GeneralSecurityException("update type does not match device");
-            }
-            if (sourceIncremental != null && !sourceIncremental.equals(INCREMENTAL)) {
-                throw new GeneralSecurityException("source incremental mismatch");
-            }
-            if (sourceFingerprint != null && !sourceFingerprint.equals(FINGERPRINT)) {
-                throw new GeneralSecurityException("source fingerprint mismatch");
-            }
-
-            if (!isAbUpdate()) {
-                annoyUser();
-                return;
-            }
-
-            long payloadOffset = 0;
-            for (final String streamingPropertyFile : streamingPropertyFiles) {
-                final String properties[] = streamingPropertyFile.split(":");
-                if ("payload.bin".equals(properties[0])) {
-                    payloadOffset = Long.parseLong(properties[1]);
-                }
-            }
-
-            Files.deleteIfExists(CARE_MAP_PATH.toPath());
-            final ZipEntry careMapEntry = zipFile.getEntry("care_map.txt");
-            if (careMapEntry == null) {
-                Log.w(TAG, "care_map.txt missing");
-            } else {
-                Files.copy(zipFile.getInputStream(careMapEntry), CARE_MAP_PATH.toPath());
-                CARE_MAP_PATH.setReadable(true, false);
-            }
-
-            final ZipEntry payloadProperties = getEntry(zipFile, "payload_properties.txt");
-            final BufferedReader propertiesReader = new BufferedReader(
-                    new InputStreamReader(zipFile.getInputStream(payloadProperties)));
-            //applyUpdate(payloadOffset, propertiesReader.lines().toArray(String[]::new));
-        } catch (GeneralSecurityException e) {
-            UPDATE_PATH.delete();
-            throw e;
-        }
-    }
-
-    private void annoyUser() {
-        PeriodicJob.cancel(this);
-        final SharedPreferences preferences = Settings.getPreferences(this);
-        preferences.edit().putBoolean(Settings.KEY_WAITING_FOR_REBOOT, true).apply();
-        if (preferences.getBoolean(Settings.KEY_IDLE_REBOOT, false)) {
-            IdleReboot.schedule(this);
-        }
-
-        final String title = getString(isAbUpdate() ? R.string.notification_title : R.string.notification_title_legacy);
-        final String text = getString(isAbUpdate() ? R.string.notification_text : R.string.notification_text_legacy);
-        final String rebootText = getString(
-                isAbUpdate() ? R.string.notification_reboot_action : R.string.notification_reboot_action_legacy);
-
-        final PendingIntent reboot = PendingIntent.getBroadcast(this, PENDING_REBOOT_ID,
-                new Intent(this, RebootReceiver.class), 0);
-        final PendingIntent settings = PendingIntent.getActivity(this, PENDING_SETTINGS_ID,
-                new Intent(this, Settings.class), 0);
-        final NotificationManager notificationManager = getSystemService(NotificationManager.class);
-        final NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID,
-                getString(R.string.notification_channel), NotificationManager.IMPORTANCE_HIGH);
-        channel.enableLights(true);
-        channel.enableVibration(true);
-        notificationManager.deleteNotificationChannel(NOTIFICATION_CHANNEL_ID_OLD);
-        notificationManager.createNotificationChannel(channel);
-        notificationManager.notify(NOTIFICATION_ID, new Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
-                .addAction(R.drawable.ic_restart, rebootText, reboot).setContentIntent(settings).setContentTitle(title)
-                .setContentText(text).setOngoing(true).setSmallIcon(R.drawable.ic_system_update_white_24dp).build());
     }
 
     private boolean otaExists(final String path) {
@@ -241,11 +104,8 @@ public class Service extends IntentService {
             final String[] metadata = reader.readLine().split(" ");
             reader.close();
 
-            Log.d("TEST", "metadata - " + metadata);
-
             final String targetIncremental = metadata[0];
             final long targetBuildDate = Long.parseLong(metadata[1]);
-            Log.d("TEST", "targetIncremental - " + targetIncremental + " " + "date - " + targetBuildDate);
             final long sourceBuildDate = SystemProperties.getLong("ro.build.date.utc", 0);
             if (targetBuildDate <= sourceBuildDate) {
                 Log.d(TAG,
@@ -262,63 +122,34 @@ public class Service extends IntentService {
             final String incrementalUpdate = DEVICE + "-incremental-" + INCREMENTAL + "-" + targetIncremental + ".zip";
             final String fullUpdate = DEVICE + "-ota_update-" + targetIncremental + ".zip";
 
-            Log.d("TEST", "incr found - " + otaExists(incrementalUpdate));
+            Log.d(TAG, "incr found - " + otaExists(incrementalUpdate));
             String updatePath = fullUpdate;
             if (otaExists(incrementalUpdate)) {
                 updatePath = fullUpdate;
             }
 
-            PeriodicJob.scheduleDownload(this, updatePath);
+            Intent downloadIntent = new Intent(this, TriggerUpdateReceiver.class);
+            downloadIntent.setAction(TriggerUpdateReceiver.DOWNLOAD_UPDATE_ACTION);
+            downloadIntent.putExtra("update_path", updatePath);
 
-            if (true) {
-                return;
-            }
+            final NotificationChannel notifChannel = new NotificationChannel(NOTIFICATION_CHANNEL_ID,
+                    getString(R.string.notification_channel), NotificationManager.IMPORTANCE_HIGH);
+            
 
-            if (incrementalUpdate.equals(downloadFile) || fullUpdate.equals(downloadFile)) {
-                Log.d(TAG, "resume fetch of " + downloadFile + " from " + downloaded + " bytes");
-                final HttpURLConnection connection = (HttpURLConnection) fetchData(downloadFile);
-                connection.setRequestProperty("Range", "bytes=" + downloaded + "-");
-                if (connection.getResponseCode() == HTTP_RANGE_NOT_SATISFIABLE) {
-                    Log.d(TAG, "download completed previously");
-                    onDownloadFinished(targetBuildDate, channel);
-                    return;
-                }
-                input = connection.getInputStream();
-            } else {
-                try {
-                    Log.d(TAG, "fetch incremental " + incrementalUpdate);
-                    downloadFile = incrementalUpdate;
-                    input = fetchData(downloadFile).getInputStream();
-                } catch (IOException e) {
-                    Log.d(TAG, "incremental not found, fetch full update " + fullUpdate);
-                    downloadFile = fullUpdate;
-                    input = fetchData(downloadFile).getInputStream();
-                }
-                downloaded = 0;
-                Files.deleteIfExists(UPDATE_PATH.toPath());
-            }
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
 
-            final OutputStream output = new FileOutputStream(UPDATE_PATH, downloaded != 0);
-            preferences.edit().putString(PREFERENCE_DOWNLOAD_FILE, downloadFile).commit();
+            nm.createNotificationChannel(notifChannel);
 
-            int bytesRead;
-            long last = System.nanoTime();
-            final byte[] buffer = new byte[8192];
-            while ((bytesRead = input.read(buffer)) != -1) {
-                output.write(buffer, 0, bytesRead);
-                downloaded += bytesRead;
-                final long now = System.nanoTime();
-                if (now - last > 1000 * 1000 * 1000) {
-                    Log.d(TAG, "downloaded " + downloaded + " bytes");
-                    last = now;
-                }
-            }
-            output.close();
-            input.close();
-
-            Log.d(TAG, "download completed");
-            onDownloadFinished(targetBuildDate, channel);
-        } catch (GeneralSecurityException | IOException e) {
+            Notification nc = new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_system_update_white_24dp)
+                    .setContentTitle(getString(R.string.update_found_notification_title))
+                    .setContentText(getString(R.string.update_found_notification_msg))
+                    .setContentIntent(PendingIntent.getBroadcast(this, 101, downloadIntent, 0))
+                    .setAutoCancel(true)
+                    .build();
+            nm.notify(NOTIFICATION_ID, nc);
+            
+        } catch (IOException e) {
             Log.e(TAG, "failed to download and install update", e);
             mUpdating = false;
             PeriodicJob.scheduleRetry(this);

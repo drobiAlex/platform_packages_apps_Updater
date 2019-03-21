@@ -45,7 +45,9 @@ public class Settings extends PreferenceActivity {
 
         final Preference checkForUpdates = findPreference(KEY_CHECK_FOR_UPDATES);
         checkForUpdates.setOnPreferenceClickListener((final Preference preference) -> {
-            sendBroadcast(new Intent(this, TriggerUpdateReceiver.class));
+            Intent intent = new Intent(this, TriggerUpdateReceiver.class);
+            intent.setAction(TriggerUpdateReceiver.CHECK_UPDATE_ACTION);
+            sendBroadcast(intent);
             return true;
         });
 

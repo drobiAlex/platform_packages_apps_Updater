@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.support.v4.content.WakefulBroadcastReceiver;
+import android.util.Log;
 import android.content.Context;
 import android.content.Intent;
 
@@ -15,8 +16,13 @@ import java.util.List;
 
 public class TriggerUpdateReceiver extends WakefulBroadcastReceiver {
 
+    private static final String TAG = "TriggerUpdateReceiver";
+
     private static final int NOTIFICATION_ID = 101;
     private static final String NOTIFICATION_CHANNEL_ID = "license-check";
+
+    static final String CHECK_UPDATE_ACTION = "co.copperhead.action.CHECK_FOR_UPDATE";
+    static final String DOWNLOAD_UPDATE_ACTION = "co.copperhead.action.DOWNLOAD_UPDATE";
 
     @Override
     public void onReceive(final Context context, final Intent intent) {
@@ -24,9 +30,13 @@ public class TriggerUpdateReceiver extends WakefulBroadcastReceiver {
         lm.checkLicense(new LicenseCallback() {
             @Override
             public void onResult(boolean active, List<String> reasons) {
-                android.util.Log.d("TEST", "license check : " + active);
+                Log.d(TAG, "license check : " + active);
                 if (active) {
-                    startWakefulService(context, new Intent(context, Service.class));
+                    if (CHECK_UPDATE_ACTION.equals(intent.getAction())) {
+                        startWakefulService(context, new Intent(context, Service.class));
+                    } else if (DOWNLOAD_UPDATE_ACTION.equals(intent.getAction())) {
+                        PeriodicJob.scheduleDownload(context, intent.getStringExtra("update_path"));
+                    }
                 } else {
                     annoyUser(context);
                 }

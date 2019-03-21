@@ -163,7 +163,9 @@ public class PeriodicJob extends JobService {
             mUpdatePath = params.getExtras().getString("update_path");
             downloadUpdate();
         } else {
-            sendBroadcast(new Intent(this, TriggerUpdateReceiver.class));
+            Intent intent = new Intent(this, TriggerUpdateReceiver.class);
+            intent.setAction(TriggerUpdateReceiver.CHECK_UPDATE_ACTION);
+            sendBroadcast(intent);
         }
         return params.getJobId() == JOB_ID_DOWNLOAD_UPDATE;
     }
