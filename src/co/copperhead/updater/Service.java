@@ -111,7 +111,7 @@ public class Service extends IntentService {
                 Log.d(TAG,
                         "targetBuildDate: " + targetBuildDate + " not higher than sourceBuildDate: " + sourceBuildDate);
                 mUpdating = false;
-                //return;
+                return;
             }
 
             preferences.edit().putLong("target_build_date", targetBuildDate).apply();
