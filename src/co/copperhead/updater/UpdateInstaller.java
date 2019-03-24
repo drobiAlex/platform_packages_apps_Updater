@@ -36,14 +36,13 @@ class UpdateInstaller {
             @Override
             public void onStatusUpdate(int status, float percent) {
                 Log.d(TAG, "onStatusUpdate: " + status + ", " + percent * 100 + "%");
-                mCallback.onProgress(Math.round(percent * 100));
+                mCallback.onProgress(Math.round(percent * 100), mFinalizing);
 
                 switch (status) {
                     case UpdateEngine.UpdateStatusConstants.FINALIZING: {
                         mFinalizing = true;
                     }
                     case UpdateEngine.UpdateStatusConstants.UPDATED_NEED_REBOOT: {
-                        mCallback.onComplete();
                     }
                 }
             }
@@ -52,9 +51,10 @@ class UpdateInstaller {
             public void onPayloadApplicationComplete(int errorCode) {
                 if (errorCode == ErrorCodeConstants.SUCCESS) {
                     Log.d(TAG, "onPayloadApplicationComplete success");
-                    //annoyUser();
+                    mCallback.onComplete();
                 } else {
                     Log.d(TAG, "onPayloadApplicationComplete: " + errorCode);
+                    mCallback.onError(errorCode);
                 }
                 UPDATE_PATH.delete();
             }
@@ -135,8 +135,10 @@ class UpdateInstaller {
     }
 
     interface UpdateCallback {
-        void onProgress(int progress);
+        void onProgress(int progress, boolean finalizing);
 
         void onComplete();
+
+        void onError(int errorCode);
     }
 }

@@ -70,6 +70,7 @@ public class PeriodicJob extends JobService {
 
     private DownloadClient mDownloadClient;
     private String mUpdatePath;
+    private boolean mRunning = false;
 
     static void scheduleDownload(final Context context, String updatePath) {
         final int networkType = Settings.getNetworkType(context);
@@ -152,6 +153,7 @@ public class PeriodicJob extends JobService {
 
     @Override
     public boolean onStartJob(final JobParameters params) {
+        mRunning = true;
         Log.d(TAG, "onStartJob id: " + params.getJobId());
         mNotificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (params.getJobId() == JOB_ID_DOWNLOAD_UPDATE) {
@@ -166,6 +168,7 @@ public class PeriodicJob extends JobService {
             Intent intent = new Intent(this, TriggerUpdateReceiver.class);
             intent.setAction(TriggerUpdateReceiver.CHECK_UPDATE_ACTION);
             sendBroadcast(intent);
+            mRunning = false;
         }
         return params.getJobId() == JOB_ID_DOWNLOAD_UPDATE;
     }
@@ -173,6 +176,7 @@ public class PeriodicJob extends JobService {
     @Override
     public boolean onStopJob(final JobParameters params) {
         unregisterReceiver(mReceiver);
+        mRunning = false;
         return false;
     }
 
@@ -251,20 +255,22 @@ public class PeriodicJob extends JobService {
                 UpdateInstaller installer = new UpdateInstaller(getApplicationContext());
                 installer.setCallback(new UpdateInstaller.UpdateCallback() {
                     @Override
-                    public void onProgress(int progress) {
+                    public void onProgress(int progress, boolean finalizing) {
                         mNotificationBuilder.setProgress(100, progress, false);
+                        mNotificationBuilder.mActions.clear();
                         String percent = NumberFormat.getPercentInstance().format(progress / 100.f);
                         mNotificationStyle.setSummaryText(percent);
-                        mNotificationStyle.bigText(IS_AB_UPDATE ? getString(R.string.prepare_zip_message)
-                                : installer.mFinalizing ?
-                                    getString(R.string.finalizing_package)
-                                    : getString(R.string.preparing_ota_first_boot));
+                        mNotificationStyle.bigText(IS_AB_UPDATE ? (finalizing ?
+                                getString(R.string.prepare_zip_message)
+                                    : getString(R.string.finalizing_package))
+                                        : getString(R.string.preparing_ota_first_boot));
+                        mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
                     }
                 
                     @Override
                     public void onComplete() {
-                        final PendingIntent reboot = PendingIntent.getBroadcast(getApplicationContext(), PENDING_REBOOT_ID,
-                                new Intent(getApplicationContext(), RebootReceiver.class), 0);
+                        final PendingIntent reboot = PendingIntent.getBroadcast(getApplicationContext(),
+                                PENDING_REBOOT_ID, new Intent(getApplicationContext(), RebootReceiver.class), 0);
 
                         mNotificationBuilder.setStyle(null);
                         mNotificationBuilder.setProgress(0, 0, false);
@@ -272,6 +278,12 @@ public class PeriodicJob extends JobService {
                         mNotificationBuilder.setContentText(text);
                         mNotificationBuilder.addAction(R.drawable.ic_system_update_white_24dp,
                                 getString(R.string.reboot), reboot);
+                        mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
+                    }
+                    
+                    @Override
+                    public void onError(int errorCode) {
+
                     }
                 });
                 installer.applyUpdate();
