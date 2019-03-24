@@ -153,6 +153,9 @@ public class PeriodicJob extends JobService {
 
     @Override
     public boolean onStartJob(final JobParameters params) {
+        if (mRunning) {
+            return true;
+        }
         mRunning = true;
         Log.d(TAG, "onStartJob id: " + params.getJobId());
         mNotificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
@@ -283,7 +286,12 @@ public class PeriodicJob extends JobService {
                     
                     @Override
                     public void onError(int errorCode) {
-
+                        mNotificationBuilder.setStyle(null);
+                        mNotificationBuilder.setProgress(0, 0, false);
+                        String text = getString(R.string.update_failed_notification_msg);
+                        mNotificationBuilder.setContentText(text);
+                        mNotificationBuilder.setOngoing(false);
+                        mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
                     }
                 });
                 installer.applyUpdate();

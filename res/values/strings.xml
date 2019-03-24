@@ -40,6 +40,7 @@
     <string name="installing_update_finished">Update installed</string>
     <string name="update_found_notification_title">New update found.</string>
     <string name="update_found_notification_msg">Click here to download update.</string>
+    <string name="update_failed_notification_msg">Update failed</string>
 
     <string name="reboot">Reboot</string>
     <string name="pause_button">Pause</string>
