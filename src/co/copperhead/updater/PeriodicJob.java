@@ -264,8 +264,8 @@ public class PeriodicJob extends JobService {
                         String percent = NumberFormat.getPercentInstance().format(progress / 100.f);
                         mNotificationStyle.setSummaryText(percent);
                         mNotificationStyle.bigText(IS_AB_UPDATE ? (finalizing ?
-                                getString(R.string.prepare_zip_message)
-                                    : getString(R.string.finalizing_package))
+                                getString(R.string.finalizing_package)
+                                    : getString(R.string.prepare_zip_message))
                                         : getString(R.string.preparing_ota_first_boot));
                         mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
                     }
