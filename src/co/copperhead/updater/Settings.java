@@ -47,6 +47,7 @@ public class Settings extends PreferenceActivity {
         checkForUpdates.setOnPreferenceClickListener((final Preference preference) -> {
             Intent intent = new Intent(this, TriggerUpdateReceiver.class);
             intent.setAction(TriggerUpdateReceiver.CHECK_UPDATE_ACTION);
+            intent.putExtra("show_toast", true);
             sendBroadcast(intent);
             return true;
         });

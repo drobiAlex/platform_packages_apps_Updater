@@ -13,12 +13,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
 import android.os.SystemProperties;
 import android.preference.PreferenceManager;
 import android.support.v4.app.NotificationCompat;
 import android.util.Log;
+import android.widget.Toast;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -111,6 +114,11 @@ public class Service extends IntentService {
                 Log.d(TAG,
                         "targetBuildDate: " + targetBuildDate + " not higher than sourceBuildDate: " + sourceBuildDate);
                 mUpdating = false;
+                if (intent.getBooleanExtra("show_toast", false)) {
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        Toast.makeText(Service.this.getApplicationContext(), R.string.no_updates_found, Toast.LENGTH_SHORT).show();
+                    });
+                }
                 return;
             }
 

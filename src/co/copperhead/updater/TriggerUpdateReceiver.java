@@ -17,7 +17,9 @@ public class TriggerUpdateReceiver extends WakefulBroadcastReceiver {
     @Override
     public void onReceive(final Context context, final Intent intent) {
         if (CHECK_UPDATE_ACTION.equals(intent.getAction())) {
-            startWakefulService(context, new Intent(context, Service.class));
+            Intent serviceIntent = new Intent(context, Service.class);
+            serviceIntent.putExtra("show_toast", intent.getBooleanExtra("show_toast", false));
+            startWakefulService(context, serviceIntent);
         } else if (DOWNLOAD_UPDATE_ACTION.equals(intent.getAction())) {
             PeriodicJob.scheduleDownload(context, intent.getStringExtra("update_path"));
         }
