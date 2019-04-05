@@ -13,12 +13,12 @@ public class RebootReceiver extends BroadcastReceiver {
     private static final String TAG = "RebootReceiver";
 
     static void reboot(final Context context) {
-        if (Service.isAbUpdate()) {
+        if (PeriodicJob.isAbUpdate()) {
             context.getSystemService(PowerManager.class).reboot(null);
         } else {
             try {
-                Service.UPDATE_PATH.setReadable(true, false);
-                RecoverySystem.installPackage(context, Service.UPDATE_PATH);
+                PeriodicJob.UPDATE_PATH.setReadable(true, false);
+                RecoverySystem.installPackage(context, PeriodicJob.UPDATE_PATH);
             } catch (IOException e) {
                 Log.e(TAG, "failed to reboot and install update", e);
             }

@@ -22,6 +22,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -32,13 +33,17 @@ import android.os.SystemProperties;
 import android.support.v4.app.NotificationCompat;
 import android.text.format.Formatter;
 import android.util.Log;
+import android.widget.Toast;
 
 import co.copperhead.updater.download.DownloadClient;
 import co.copperhead.updater.download.DownloadClient.Headers;
 import co.copperhead.updater.misc.StringGenerator;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URL;
+import java.net.HttpURLConnection;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.zip.ZipEntry;
@@ -49,11 +54,16 @@ public class PeriodicJob extends JobService {
     private static final int JOB_ID_PERIODIC = 1;
     private static final int JOB_ID_RETRY = 2;
     private static final int JOB_ID_DOWNLOAD_UPDATE = 3;
+    private static final int JOB_ID_CHECK_FOR_UPDATES = 4;
     private static final long INTERVAL_MILLIS = 4 * 60 * 60 * 1000;
     private static final long MIN_LATENCY_MILLIS = 4 * 60 * 1000;
     private static final int MAX_REPORT_INTERVAL_MS = 1000;
 
+    private static final int CONNECT_TIMEOUT = 60000;
+    private static final int READ_TIMEOUT = 60000;
+
     private static final String ONGOING_NOTIFICATION_CHANNEL = "ongoing_notification_channel";
+    private static final String NOTIFICATION_CHANNEL = "updates2";
 
     private static final int NOTIFICATION_ID = 10;
 
@@ -62,7 +72,8 @@ public class PeriodicJob extends JobService {
     static final File UPDATE_PATH = new File("/data/ota_package/update.zip");
 
     private static final String PAUSE_INTENT_ACTION = "co.copperhead.updater.action.PAUSE_DOWNLOAD";
-    private static final String RESUME_INTENT_ACTION = "co.copperhead.updater.action.RESUME_DOWNLOAD";
+    private static final String RESUME_INTENT_ACTION =
+            "co.copperhead.updater.action.RESUME_DOWNLOAD";
 
     private NotificationManager mNotificationManager = null;
     private NotificationCompat.Builder mNotificationBuilder = null;
@@ -71,6 +82,10 @@ public class PeriodicJob extends JobService {
     private DownloadClient mDownloadClient;
     private String mUpdatePath;
     private boolean mRunning = false;
+
+    static boolean isAbUpdate() {
+        return SystemProperties.getBoolean("ro.build.ab_update", false);
+    }
 
     static void scheduleDownload(final Context context, String updatePath) {
         final int networkType = Settings.getNetworkType(context);
@@ -83,14 +98,39 @@ public class PeriodicJob extends JobService {
             PersistableBundle extras = new PersistableBundle();
             extras.putString("update_path", updatePath);
             final ComponentName serviceName = new ComponentName(context, PeriodicJob.class);
-            final int result = scheduler.schedule(new JobInfo.Builder(JOB_ID_DOWNLOAD_UPDATE, serviceName)
+            final int result = scheduler.schedule(
+                new JobInfo.Builder(JOB_ID_DOWNLOAD_UPDATE, serviceName)
                     .setRequiredNetworkType(networkType)
                     .setRequiresBatteryNotLow(batteryNotLow)
                     .setPersisted(true)
-                    .setExtras(extras)
-                    .build());
+                    .setExtras(extras).build());
             if (result == JobScheduler.RESULT_FAILURE) {
-                Log.d(TAG, "Periodic job schedule failed");
+                Log.d(TAG, "failed to download update");
+            }
+        }
+    }
+    
+    static void scheduleCheckForUpdates(final Context context, final boolean showToast) {
+        final int networkType = Settings.getNetworkType(context);
+        final boolean batteryNotLow = Settings.getBatteryNotLow(context);
+        final JobScheduler scheduler = context.getSystemService(JobScheduler.class);
+        final JobInfo downloadJobInfo = scheduler.getPendingJob(JOB_ID_DOWNLOAD_UPDATE);
+        final JobInfo checkJobInfo = scheduler.getPendingJob(JOB_ID_CHECK_FOR_UPDATES);
+        if (checkJobInfo != null || downloadJobInfo != null) {
+            Log.d(TAG, "updater already running");
+        } else {
+            final ComponentName service = new ComponentName(context, PeriodicJob.class);
+            PersistableBundle extras = new PersistableBundle();
+            extras.putBoolean("show_toast", showToast);
+            final int result = scheduler.schedule(
+                    new JobInfo.Builder(JOB_ID_CHECK_FOR_UPDATES, service)
+                            .setRequiredNetworkType(networkType)
+                            .setRequiresBatteryNotLow(batteryNotLow)
+                            .setPersisted(true)
+                            .setExtras(extras)
+                            .build());
+            if (result == JobScheduler.RESULT_FAILURE) {
+                Log.e(TAG, "Failed to check for updates");
             }
         }
     }
@@ -110,11 +150,11 @@ public class PeriodicJob extends JobService {
         }
         final ComponentName serviceName = new ComponentName(context, PeriodicJob.class);
         final int result = scheduler.schedule(new JobInfo.Builder(JOB_ID_PERIODIC, serviceName)
-            .setRequiredNetworkType(networkType)
-            .setRequiresBatteryNotLow(batteryNotLow)
-            .setPersisted(true)
-            .setPeriodic(INTERVAL_MILLIS)
-            .build());
+                .setRequiredNetworkType(networkType)
+                .setRequiresBatteryNotLow(batteryNotLow)
+                .setPersisted(true)
+                .setPeriodic(INTERVAL_MILLIS)
+                .build());
         if (result == JobScheduler.RESULT_FAILURE) {
             Log.d(TAG, "Periodic job schedule failed");
         }
@@ -124,10 +164,10 @@ public class PeriodicJob extends JobService {
         final JobScheduler scheduler = context.getSystemService(JobScheduler.class);
         final ComponentName serviceName = new ComponentName(context, PeriodicJob.class);
         final int result = scheduler.schedule(new JobInfo.Builder(JOB_ID_RETRY, serviceName)
-            .setRequiredNetworkType(Settings.getNetworkType(context))
-            .setRequiresBatteryNotLow(Settings.getBatteryNotLow(context))
-            .setMinimumLatency(MIN_LATENCY_MILLIS)
-            .build());
+                .setRequiredNetworkType(Settings.getNetworkType(context))
+                .setRequiresBatteryNotLow(Settings.getBatteryNotLow(context))
+                .setMinimumLatency(MIN_LATENCY_MILLIS)
+                .build());
         if (result == JobScheduler.RESULT_FAILURE) {
             Log.d(TAG, "Retry job schedule failed");
         }
@@ -143,7 +183,8 @@ public class PeriodicJob extends JobService {
         return getString(IS_AB_UPDATE ? R.string.url : R.string.url_legacy) + path;
     }
 
-    private static ZipEntry getEntry(final ZipFile zipFile, final String name) throws GeneralSecurityException {
+    private static ZipEntry getEntry(final ZipFile zipFile, final String name)
+            throws GeneralSecurityException {
         final ZipEntry entry = zipFile.getEntry(name);
         if (entry == null) {
             throw new GeneralSecurityException("missing zip entry: " + name);
@@ -167,13 +208,16 @@ public class PeriodicJob extends JobService {
             registerReceiver(mReceiver, filter);
             mUpdatePath = params.getExtras().getString("update_path");
             downloadUpdate();
+        } else if (params.getJobId() == JOB_ID_CHECK_FOR_UPDATES) {
+            new Thread(new Runnable() {
+                public void run() {
+                    checkForUpdates(params);
+                }
+            }).start();
         } else {
-            Intent intent = new Intent(this, TriggerUpdateReceiver.class);
-            intent.setAction(TriggerUpdateReceiver.CHECK_UPDATE_ACTION);
-            sendBroadcast(intent);
-            mRunning = false;
+            scheduleCheckForUpdates(this, false);
         }
-        return params.getJobId() == JOB_ID_DOWNLOAD_UPDATE;
+        return params.getJobId() != JOB_ID_PERIODIC;
     }
 
     @Override
@@ -181,6 +225,95 @@ public class PeriodicJob extends JobService {
         unregisterReceiver(mReceiver);
         mRunning = false;
         return false;
+    }
+
+    private HttpURLConnection fetchData(final String path) throws IOException {
+        final URL url = new URL(
+                getString(isAbUpdate() ? R.string.url : R.string.url_legacy) + path);
+        final HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+        urlConnection.setConnectTimeout(CONNECT_TIMEOUT);
+        urlConnection.setReadTimeout(READ_TIMEOUT);
+        return urlConnection;
+    }
+
+    private boolean otaExists(final String path) {
+        try {
+            HttpURLConnection con = (HttpURLConnection) fetchData(path);
+            con.setRequestMethod("HEAD");
+            return (con.getResponseCode() == HttpURLConnection.HTTP_OK);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private void checkForUpdates(JobParameters params) {
+        final SharedPreferences preferences = Settings.getPreferences(this);
+        final String channel = SystemProperties.get("sys.update.channel",
+                preferences.getString(PREFERENCE_CHANNEL, "stable"));
+        HttpURLConnection conn = null;
+        try {
+            InputStream input = fetchData(DEVICE + "-" + channel).getInputStream();
+            final BufferedReader reader = new BufferedReader(new InputStreamReader(input));
+            final String[] metadata = reader.readLine().split(" ");
+            reader.close();
+
+            final String targetIncremental = metadata[0];
+            final long targetBuildDate = Long.parseLong(metadata[1]);
+            final long sourceBuildDate = SystemProperties.getLong("ro.build.date.utc", 0);
+            if (targetBuildDate <= sourceBuildDate) {
+                Log.d(TAG, "targetBuildDate: "
+                        + targetBuildDate + " not higher than sourceBuildDate: " + sourceBuildDate);
+                if (params.getExtras().getBoolean("show_toast", false)) {
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        Toast.makeText(getApplicationContext(), R.string.no_updates_found,
+                                Toast.LENGTH_SHORT).show();
+                    });
+                }
+                //jobFinished(params, false);
+                //return;
+            }
+            preferences.edit().putLong("target_build_date", targetBuildDate).apply();
+            long downloaded = UPDATE_PATH.length();
+
+            final String incrementalUpdate =
+                    DEVICE + "-incremental-" + INCREMENTAL + "-" + targetIncremental + ".zip";
+            final String fullUpdate = DEVICE + "-ota_update-" + targetIncremental + ".zip";
+
+            Log.d(TAG, "incr found - " + otaExists(incrementalUpdate));
+            String updatePath = fullUpdate;
+            if (otaExists(incrementalUpdate)) {
+                updatePath = fullUpdate;
+            }
+
+            Intent downloadIntent = new Intent(this, TriggerUpdateReceiver.class);
+            downloadIntent.setAction(TriggerUpdateReceiver.DOWNLOAD_UPDATE_ACTION);
+            downloadIntent.putExtra("update_path", updatePath);
+
+            final NotificationChannel notifChannel = new NotificationChannel(NOTIFICATION_CHANNEL,
+                    getString(R.string.notification_channel), NotificationManager.IMPORTANCE_HIGH);
+
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
+            nm.createNotificationChannel(notifChannel);
+
+            NotificationCompat.Builder nc =
+                new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_system_update_white_24dp)
+                    .setContentTitle(getString(R.string.update_found_notification_title))
+                    .setContentText(getString(R.string.update_found_notification_msg))
+                    .setContentIntent(PendingIntent.getBroadcast(this, 101, downloadIntent, 0))
+                    .setAutoCancel(true);
+            nm.notify(NOTIFICATION_ID, nc.build());
+        } catch (IOException e) {
+            Log.e(TAG, "failed to check for updates", e);
+            scheduleRetry(this);
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+            jobFinished(params, false);
+        }
     }
 
     private boolean verifyPackage(File update) {
@@ -192,10 +325,12 @@ public class PeriodicJob extends JobService {
             final String channel = SystemProperties.get("sys.update.channel",
                     Settings.getPreferences(this).getString(PREFERENCE_CHANNEL, "stable"));
 
-            final long targetBuildDate = Settings.getPreferences(this).getLong("target_build_date", 0);
+            final long targetBuildDate =
+                    Settings.getPreferences(this).getLong("target_build_date", 0);
 
             final ZipEntry metadata = getEntry(zipFile, "META-INF/com/android/metadata");
-            final BufferedReader reader = new BufferedReader(new InputStreamReader(zipFile.getInputStream(metadata)));
+            final BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(zipFile.getInputStream(metadata)));
             String device = null;
             String serialno = null;
             String type = null;
@@ -229,7 +364,8 @@ public class PeriodicJob extends JobService {
             }
             if (serialno != null) {
                 if ("stable".equals(channel) || "beta".equals(channel)) {
-                    throw new GeneralSecurityException("serialno constraint not permitted for channel " + channel);
+                    throw new GeneralSecurityException(
+                            "serialno constraint not permitted for channel " + channel);
                 }
                 if (!serialno.equals(Build.getSerial())) {
                     throw new GeneralSecurityException("serialno mismatch");
@@ -272,8 +408,13 @@ public class PeriodicJob extends JobService {
                 
                     @Override
                     public void onComplete() {
-                        final PendingIntent reboot = PendingIntent.getBroadcast(getApplicationContext(),
-                                PENDING_REBOOT_ID, new Intent(getApplicationContext(), RebootReceiver.class), 0);
+                        if (Settings.getPreferences(PeriodicJob.this).getBoolean(
+                                Settings.KEY_IDLE_REBOOT, false)) {
+                            IdleReboot.schedule(PeriodicJob.this);
+                        }
+                        final PendingIntent reboot = PendingIntent.getBroadcast(
+                                getApplicationContext(), PENDING_REBOOT_ID, new Intent(
+                                    getApplicationContext(), RebootReceiver.class), 0);
 
                         mNotificationBuilder.setStyle(null);
                         mNotificationBuilder.setProgress(0, 0, false);
@@ -319,7 +460,8 @@ public class PeriodicJob extends JobService {
         }
     };
 
-    private DownloadClient.DownloadCallback mDownloadCallback=new DownloadClient.DownloadCallback(){
+    private DownloadClient.DownloadCallback mDownloadCallback =
+            new DownloadClient.DownloadCallback(){
     
         @Override
         public void onSuccess(File destination) {
@@ -351,6 +493,7 @@ public class PeriodicJob extends JobService {
                     mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
                 }
             } else {
+                mNotificationBuilder.mActions.clear();
                 mNotificationBuilder.setStyle(null);
                 mNotificationBuilder.setProgress(0, 0, false);
                 text = getString(R.string.verification_failed_notification);
@@ -384,7 +527,8 @@ public class PeriodicJob extends JobService {
         }
     };
 
-    private DownloadClient.ProgressListener mProgressListener = new DownloadClient.ProgressListener() {
+    private DownloadClient.ProgressListener mProgressListener =
+            new DownloadClient.ProgressListener() {
         private long mLastUpdate = 0;
         private int mProgress = 0;
         @Override
@@ -404,8 +548,10 @@ public class PeriodicJob extends JobService {
                 mNotificationStyle.setSummaryText(percent);
 
                 String speedString = Formatter.formatFileSize(getApplicationContext(), speed);
-                CharSequence etaString = StringGenerator.formatETA(getApplicationContext(), eta * 1000);
-                mNotificationStyle.bigText(getString(R.string.text_download_speed, etaString, speedString));
+                CharSequence etaString =
+                        StringGenerator.formatETA(getApplicationContext(), eta * 1000);
+                mNotificationStyle.bigText(
+                        getString(R.string.text_download_speed, etaString, speedString));
 
                 mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
             }

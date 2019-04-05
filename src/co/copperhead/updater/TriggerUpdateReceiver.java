@@ -1,26 +1,16 @@
 package co.copperhead.updater;
 
-import android.support.v4.content.WakefulBroadcastReceiver;
-import android.util.Log;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
-import java.util.List;
+public class TriggerUpdateReceiver extends BroadcastReceiver {
 
-public class TriggerUpdateReceiver extends WakefulBroadcastReceiver {
-
-    private static final String TAG = "TriggerUpdateReceiver";
-
-    static final String CHECK_UPDATE_ACTION = "co.copperhead.action.CHECK_FOR_UPDATE";
     static final String DOWNLOAD_UPDATE_ACTION = "co.copperhead.action.DOWNLOAD_UPDATE";
 
     @Override
     public void onReceive(final Context context, final Intent intent) {
-        if (CHECK_UPDATE_ACTION.equals(intent.getAction())) {
-            Intent serviceIntent = new Intent(context, Service.class);
-            serviceIntent.putExtra("show_toast", intent.getBooleanExtra("show_toast", false));
-            startWakefulService(context, serviceIntent);
-        } else if (DOWNLOAD_UPDATE_ACTION.equals(intent.getAction())) {
+        if (DOWNLOAD_UPDATE_ACTION.equals(intent.getAction())) {
             PeriodicJob.scheduleDownload(context, intent.getStringExtra("update_path"));
         }
     }
