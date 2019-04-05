@@ -43,6 +43,12 @@
     <string name="update_failed_notification_msg">Update failed</string>
     <string name="no_updates_found">No updates found</string>
 
+    <string name="interval_title">Check for updates frequency</string>
+    <string name="interval_day">Once a day</string>
+    <string name="interval_twice_day">Twice a day</string>
+    <string name="interval_other_day">Every other day</string>
+    <string name="interval_never">Never</string>
+
     <string name="reboot">Reboot</string>
     <string name="pause_button">Pause</string>
     <string name="resume_button">Resume</string>

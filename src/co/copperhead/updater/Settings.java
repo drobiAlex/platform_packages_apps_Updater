@@ -18,12 +18,21 @@ public class Settings extends PreferenceActivity {
     static final String KEY_IDLE_REBOOT = "idle_reboot";
     static final String KEY_WAITING_FOR_REBOOT = "waiting_for_reboot";
     private static final String KEY_CHECK_FOR_UPDATES = "check_for_updates";
+    private static final String KEY_INTERVAL = "check_for_updates_interval";
 
     static final String PREFERENCE_CHANNEL = "channel";
 
     static SharedPreferences getPreferences(final Context context) {
         final Context deviceContext = context.createDeviceProtectedStorageContext();
         return PreferenceManager.getDefaultSharedPreferences(deviceContext);
+    }
+
+    static int getInterval(final Context context) {
+        return Integer.parseInt(getPreferences(context).getString(KEY_INTERVAL, "24"));
+    }
+
+    static boolean autoCheckEnabled(final Context context) {
+        return getInterval(context) != 0;
     }
 
     static int getNetworkType(final Context context) {
@@ -58,6 +67,18 @@ public class Settings extends PreferenceActivity {
             }
             return true;
         });
+
+        final Preference interval = findPreference(KEY_INTERVAL);
+        interval.setOnPreferenceChangeListener((final Preference preference,
+                final Object newValue) -> {
+                    final int value = Integer.parseInt((String) newValue);
+                    if (value == 0) {
+                        PeriodicJob.cancel(this);
+                    } else {
+                        PeriodicJob.schedule(this);
+                    }
+                    return true;
+                });
 
         final Preference batteryNotLow = findPreference(KEY_BATTERY_NOT_LOW);
         batteryNotLow.setOnPreferenceChangeListener((final Preference preference, final Object newValue) -> {

@@ -8,6 +8,14 @@
         android:key="check_for_updates"
         android:title="@string/check_for_updates_title" />
 
+    <ListPreference
+        android:key="check_for_updates_interval"
+        android:title="@string/interval_title"
+        android:summary="%s"
+        android:entries="@array/interval_entries"
+        android:entryValues="@array/interval_values"
+        android:defaultValue="24" />
+
     <ListPreference android:key="channel"
             android:title="@string/channel_title"
             android:summary="%s"

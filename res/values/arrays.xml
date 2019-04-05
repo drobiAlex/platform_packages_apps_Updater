@@ -23,4 +23,18 @@
         <item>3</item>
         <item>2</item>
     </string-array>
+
+    <string-array name="interval_entries" translatable="false">
+        <item>@string/interval_twice_day</item>
+        <item>@string/interval_day</item>
+        <item>@string/interval_other_day</item>
+        <item>@string/interval_never</item>
+    </string-array>
+
+    <string-array name="interval_values" translatable="false">
+        <item>12</item>
+        <item>24</item>
+        <item>48</item>
+        <item>0</item>
+    </string-array>
 </resources>

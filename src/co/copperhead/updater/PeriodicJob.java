@@ -55,7 +55,7 @@ public class PeriodicJob extends JobService {
     private static final int JOB_ID_RETRY = 2;
     private static final int JOB_ID_DOWNLOAD_UPDATE = 3;
     private static final int JOB_ID_CHECK_FOR_UPDATES = 4;
-    private static final long INTERVAL_MILLIS = 4 * 60 * 60 * 1000;
+    private static final long INTERVAL_MILLIS = 60 * 60 * 1000;
     private static final long MIN_LATENCY_MILLIS = 4 * 60 * 1000;
     private static final int MAX_REPORT_INTERVAL_MS = 1000;
 
@@ -136,6 +136,8 @@ public class PeriodicJob extends JobService {
     }
 
     static void schedule(final Context context) {
+        final int interval = Settings.getInterval(context);
+        final boolean enabled = Settings.autoCheckEnabled(context);
         final int networkType = Settings.getNetworkType(context);
         final boolean batteryNotLow = Settings.getBatteryNotLow(context);
         final JobScheduler scheduler = context.getSystemService(JobScheduler.class);
@@ -144,8 +146,12 @@ public class PeriodicJob extends JobService {
                 jobInfo.getNetworkType() == networkType &&
                 jobInfo.isRequireBatteryNotLow() == batteryNotLow &&
                 jobInfo.isPersisted() &&
-                jobInfo.getIntervalMillis() == INTERVAL_MILLIS) {
+                jobInfo.getIntervalMillis() == (interval * INTERVAL_MILLIS)) {
             Log.d(TAG, "Periodic job already registered");
+            return;
+        }
+        if (!enabled) {
+            scheduler.cancel(JOB_ID_PERIODIC);
             return;
         }
         final ComponentName serviceName = new ComponentName(context, PeriodicJob.class);
@@ -153,7 +159,7 @@ public class PeriodicJob extends JobService {
                 .setRequiredNetworkType(networkType)
                 .setRequiresBatteryNotLow(batteryNotLow)
                 .setPersisted(true)
-                .setPeriodic(INTERVAL_MILLIS)
+                .setPeriodic(interval * INTERVAL_MILLIS)
                 .build());
         if (result == JobScheduler.RESULT_FAILURE) {
             Log.d(TAG, "Periodic job schedule failed");
