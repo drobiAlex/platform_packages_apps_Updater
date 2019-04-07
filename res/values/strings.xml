@@ -42,6 +42,7 @@
     <string name="update_found_notification_msg">Click here to download update.</string>
     <string name="update_failed_notification_msg">Update failed</string>
     <string name="no_updates_found">No updates found</string>
+    <string name="updater_already_running">Update in progress</string>
 
     <string name="interval_title">Check for updates frequency</string>
     <string name="interval_day">Once a day</string>

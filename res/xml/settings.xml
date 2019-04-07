@@ -33,7 +33,8 @@
 
     <SwitchPreference android:key="battery_not_low"
             android:title="@string/battery_not_low_title"
-            android:summary="@string/battery_not_low_summary" />
+            android:summary="@string/battery_not_low_summary"
+            android:defaultValue="true" />
 
     <SwitchPreference android:key="idle_reboot"
             android:title="@string/idle_reboot_title"

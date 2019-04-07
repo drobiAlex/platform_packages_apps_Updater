@@ -10,6 +10,7 @@ import android.preference.ListPreference;
 import android.preference.Preference;
 import android.preference.PreferenceActivity;
 import android.preference.PreferenceManager;
+import android.widget.Toast;
 
 public class Settings extends PreferenceActivity {
     private static final int DEFAULT_NETWORK_TYPE = JobInfo.NETWORK_TYPE_UNMETERED;
@@ -49,12 +50,15 @@ public class Settings extends PreferenceActivity {
         if (!UserManager.get(this).isSystemUser()) {
             throw new SecurityException("system user only");
         }
+        getActionBar().setDisplayHomeAsUpEnabled(true);
         getPreferenceManager().setStorageDeviceProtected();
         addPreferencesFromResource(R.xml.settings);
 
         final Preference checkForUpdates = findPreference(KEY_CHECK_FOR_UPDATES);
         checkForUpdates.setOnPreferenceClickListener((final Preference preference) -> {
-            PeriodicJob.scheduleCheckForUpdates(this, true);
+            if (!PeriodicJob.scheduleCheckForUpdates(this, true)) {
+                Toast.makeText(this, R.string.updater_already_running, Toast.LENGTH_SHORT).show();
+            }
             return true;
         });
 
