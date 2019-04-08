@@ -360,8 +360,8 @@ public class PeriodicJob extends JobService {
                                 Toast.LENGTH_SHORT).show();
                     });
                 }
-                //jobFinished(params, false);
-                //return;
+                jobFinished(params, false);
+                return;
             }
             preferences.edit().putLong("target_build_date", targetBuildDate).apply();
             long downloaded = UPDATE_PATH.length();
