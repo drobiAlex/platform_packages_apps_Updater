@@ -373,7 +373,7 @@ public class PeriodicJob extends JobService {
             Log.d(TAG, "incr found - " + otaExists(incrementalUpdate));
             String updatePath = fullUpdate;
             if (otaExists(incrementalUpdate)) {
-                updatePath = fullUpdate;
+                updatePath = incrementalUpdate;
             }
 
             Intent downloadIntent = new Intent(this, UpdateReceiver.class);
