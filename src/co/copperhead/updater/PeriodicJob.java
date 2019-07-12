@@ -82,7 +82,6 @@ public class PeriodicJob extends JobService {
 
     private DownloadClient mDownloadClient;
     private String mUpdatePath;
-    private boolean mRunning = false;
 
     static boolean isAbUpdate() {
         return SystemProperties.getBoolean("ro.build.ab_update", false);
@@ -92,9 +91,8 @@ public class PeriodicJob extends JobService {
         final int networkType = Settings.getNetworkType(context);
         final boolean batteryNotLow = Settings.getBatteryNotLow(context);
         final JobScheduler scheduler = context.getSystemService(JobScheduler.class);
-        final JobInfo jobInfo = scheduler.getPendingJob(JOB_ID_DOWNLOAD_UPDATE);
-        if (jobInfo != null) {
-            Log.d(TAG, "update already in progress ignoring request");
+        if (isRunning(context)) {
+            Log.d(TAG, "updater already running, ignoring request");
         } else {
             PersistableBundle extras = new PersistableBundle();
             extras.putString("update_path", updatePath);
@@ -113,9 +111,8 @@ public class PeriodicJob extends JobService {
 
     static void scheduleInstall(final Context context) {
         final JobScheduler scheduler = context.getSystemService(JobScheduler.class);
-        final JobInfo jobInfo = scheduler.getPendingJob(JOB_ID_INSTALL_UPDATE);
-        if (jobInfo != null) {
-            Log.d(TAG, "install already in progress ignoring request");
+        if (isRunning(context)) {
+            Log.d(TAG, "updater already running, ignoring request");
         } else {
             final ComponentName service = new ComponentName(context, PeriodicJob.class);
             final int result = scheduler.schedule(
@@ -132,10 +129,8 @@ public class PeriodicJob extends JobService {
         final int networkType = Settings.getNetworkType(context);
         final boolean batteryNotLow = Settings.getBatteryNotLow(context);
         final JobScheduler scheduler = context.getSystemService(JobScheduler.class);
-        final JobInfo downloadJobInfo = scheduler.getPendingJob(JOB_ID_DOWNLOAD_UPDATE);
-        final JobInfo checkJobInfo = scheduler.getPendingJob(JOB_ID_CHECK_FOR_UPDATES);
-        if (checkJobInfo != null || downloadJobInfo != null) {
-            Log.d(TAG, "updater already running");
+        if (isRunning(context)) {
+            Log.d(TAG, "updater already running, ignoring request");
             return false;
         } else {
             final ComponentName service = new ComponentName(context, PeriodicJob.class);
@@ -199,6 +194,13 @@ public class PeriodicJob extends JobService {
         }
     }
 
+    private static boolean isRunning(final Context context) {
+        final JobScheduler scheduler = context.getSystemService(JobScheduler.class);
+        return (scheduler.getPendingJob(JOB_ID_CHECK_FOR_UPDATES) != null
+                || scheduler.getPendingJob(JOB_ID_DOWNLOAD_UPDATE) != null
+                || scheduler.getPendingJob(JOB_ID_INSTALL_UPDATE) != null);        
+    }
+
     static void cancel(final Context context) {
         final JobScheduler scheduler = context.getSystemService(JobScheduler.class);
         scheduler.cancel(JOB_ID_RETRY);
@@ -227,12 +229,8 @@ public class PeriodicJob extends JobService {
 
     @Override
     public boolean onStartJob(final JobParameters params) {
-        if (mRunning) {
-            return true;
-        }
         mNotificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         createNotificationBuilder();
-        mRunning = true;
         Log.d(TAG, "onStartJob id: " + params.getJobId());
         if (params.getJobId() == JOB_ID_DOWNLOAD_UPDATE) {
             IntentFilter filter = new IntentFilter(PAUSE_INTENT_ACTION);
@@ -260,7 +258,6 @@ public class PeriodicJob extends JobService {
     @Override
     public boolean onStopJob(final JobParameters params) {
         unregisterReceiver(mReceiver);
-        mRunning = false;
         return false;
     }
 
@@ -327,13 +324,18 @@ public class PeriodicJob extends JobService {
     }
 
     private boolean otaExists(final String path) {
+        HttpURLConnection conn = null;
         try {
-            HttpURLConnection con = (HttpURLConnection) fetchData(path);
-            con.setRequestMethod("HEAD");
+            conn = (HttpURLConnection) fetchData(path);
+            conn.setRequestMethod("HEAD");
             return (con.getResponseCode() == HttpURLConnection.HTTP_OK);
         } catch (IOException e) {
             e.printStackTrace();
             return false;
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
     }
 
@@ -343,7 +345,8 @@ public class PeriodicJob extends JobService {
                 preferences.getString(PREFERENCE_CHANNEL, "stable"));
         HttpURLConnection conn = null;
         try {
-            InputStream input = fetchData(DEVICE + "-" + channel).getInputStream();
+            conn = fetchData(DEVICE + "-" + channel);
+            InputStream input = conn.getInputStream();
             final BufferedReader reader = new BufferedReader(new InputStreamReader(input));
             final String[] metadata = reader.readLine().split(" ");
             reader.close();
@@ -547,7 +550,6 @@ public class PeriodicJob extends JobService {
     
             @Override
             public void onResponse(int statusCode, String url, Headers headers) {
-    
             }
 
             @Override
@@ -610,6 +612,7 @@ public class PeriodicJob extends JobService {
                     .build();
         } catch (IOException e) {
             e.printStackTrace();
+            jobFinished(params, false);
             return;
         }
         mNotificationManager.notify(NOTIFICATION_ID, mNotificationBuilder.build());
